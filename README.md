@@ -32,8 +32,11 @@ Este é um projeto de exemplo que inclui testes unitários e cobertura de códig
 Para iniciar o servidor local do Firebase, execute o seguinte comando:
 
 ```bash
-firebase serve
+firebase emulators:start
 ```
+
+Depois acesse na url indicada a interface:
+> Normalmente [http://localhost:4000](http://localhost:4000)
 
 ## Testes
 
