@@ -1,34 +1,52 @@
 const { logger } = require("firebase-functions");
-const { onRequest } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { ItemsService } = require("../services/items.service");
 
-const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+exports.addItem = async (req, res) => {
+    logger.log("Creating item in database");
 
-initializeApp();
-
-exports.addItem = onRequest(async (req, res) => {
     const { name } = req.body;
+    
+    // Test if name is empty or if it contains harmfull characters
+    if(!name || !name.trim() || /['"%;()&+]/.test(name)) {
+        logger.error("Invalid body, name should be valid");
+        return res.sendStatus(400);
+    }
 
+    const itemsService = new ItemsService();
     logger.log("Creating item with name", name);
-    const writeResult = await getFirestore()
-        .collection("items")
-        .add({ name: name, increment_id: 0 });
-    res.json({ result: `Item with ID: ${writeResult.id} added.` });
-});
+    let createdItem = null;
+    try {
+        createdItem = await itemsService.createItem({ name: name, increment_id: 0 });
+    } catch (error) {
+        logger.error("There was an error creating the item", error);
+        return res.sendStatus(500);
+    }
 
-exports.incrementItem = onDocumentCreated("/items/{documentId}", async (event) => {
+    logger.log("Item created successfully", createdItem.id);
+    return res.json({ result: `Item with ID: ${createdItem.id} added.` });
+};
+
+exports.incrementItem = async (event) => {
+    logger.log("Setting increment_id", event.params.documentId);
+
     const itemsRef = event.data.ref;
 
-    const response = await getFirestore()
-        .collection("items")
-        .orderBy('increment_id', 'desc')
-        .limit(1)
-        .get();
-    const lastItem = response.docs.length === 0 ? {} : response.docs[0].data();
-    const lastIncrement = lastItem?.increment_id ?? 0;
+    const itemsService = new ItemsService();
+    let lastIncrement = 0;
+    try {
+        lastIncrement = await itemsService.getLastIncrementId();
+    } catch (error) {
+        logger.error("There was an error finding the last increment_id", event.params.documentId, error);
+        throw new HttpsError(500, "Database error");
+    }
 
-    logger.log("Setting increment_id", event.params.documentId, lastIncrement);
+    const newIncrement = lastIncrement + 1;
+    try {
+        await itemsService.updateIncrementId(itemsRef, newIncrement);
+    } catch (error) {
+        logger.error("There was an error setting the item increment_id", event.params.documentId, error);
+        throw new HttpsError(500, "Database error");
+    }
 
-    return itemsRef.set({ increment_id: lastIncrement + 1 }, { merge: true });
-});
+    logger.log("New increment_id was set successfully", event.params.documentId, newIncrement);
+};
